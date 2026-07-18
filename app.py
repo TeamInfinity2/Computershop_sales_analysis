@@ -1,7 +1,8 @@
+import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import os
+
 
 # -----------------------------
 # PAGE CONFIG
@@ -25,8 +26,6 @@ def load_data(uploaded_file=None):
 
         if not os.path.exists(file_path):
             return None
-
-        df = pd.read_excel(file_path)
 
     # Rename columns
     df = df.rename(columns={
