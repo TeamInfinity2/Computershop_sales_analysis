@@ -22,10 +22,12 @@ def load_data(uploaded_file=None):
     if uploaded_file is not None:
         df = pd.read_excel(uploaded_file)
     else:
-        file_path = 'computer shop.xlsx'
+        file_path = "computer shop.xlsx"
 
         if not os.path.exists(file_path):
             return None
+
+        df = pd.read_excel(file_path)
 
     # Rename columns
     df = df.rename(columns={
