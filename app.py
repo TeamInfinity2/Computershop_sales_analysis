@@ -1,120 +1,209 @@
-"""
-Computer Shop Sales — End-to-End Streamlit Dashboard
-Run locally:  streamlit run app.py
-Deploy:       push to GitHub -> share.streamlit.io -> New app -> point to this repo/file
-"""
-import pandas as pd
 import streamlit as st
+import pandas as pd
 import plotly.express as px
+import os
 
-st.set_page_config(page_title="Computer Shop Sales Dashboard", layout="wide", page_icon="💻")
+# -----------------------------
+# PAGE CONFIG
+# -----------------------------
+st.set_page_config(
+    page_title='Computer Shop Sales Dashboard',
+    page_icon='💻',
+    layout='wide'
+)
 
-# ---------------------------------------------------------------
-# 1. DATA LOADING
-# ---------------------------------------------------------------
+# -----------------------------
+# LOAD DATA
+# -----------------------------
 @st.cache_data
-def load_data(path="computer shop.xlsx"):
-    df = pd.read_excel(path)
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df = df.drop_duplicates().dropna(subset=["Date", "Total Price"])
-    if "Total Price" not in df.columns or df["Total Price"].isnull().all():
-        df["Total Price"] = df["Quantity"] * df["Unit Price"]
-    df["Year"] = df["Date"].dt.year
-    df["Month"] = df["Date"].dt.to_period("M").astype(str)
+def load_data(uploaded_file=None):
+
+    if uploaded_file is not None:
+        df = pd.read_excel(uploaded_file)
+    else:
+        file_path = 'computer shop.xlsx'
+
+        if not os.path.exists(file_path):
+            return None
+
+        df = pd.read_excel(file_path)
+
+    # Rename columns
+    df = df.rename(columns={
+        'Order Date': 'Date',
+        'Order id': 'Order_ID',
+        'Cust Name': 'Customer',
+        'Product': 'Product_Name',
+        'Qty': 'Quantity',
+        'Amount': 'Total_Sales',
+        'Profit 10%': 'Profit'
+    })
+
+    # Date conversion
+    df['Date'] = pd.to_datetime(df['Date'])
+
+    # Time columns
+    df['Year'] = df['Date'].dt.year
+    df['Month'] = df['Date'].dt.strftime('%Y-%m')
+
     return df
 
-uploaded = st.sidebar.file_uploader("Upload computer shop.xlsx", type=["xlsx"])
-df = load_data(uploaded) if uploaded else load_data()
 
-# ---------------------------------------------------------------
-# 2. SIDEBAR FILTERS
-# ---------------------------------------------------------------
-st.sidebar.header("Filters")
+# -----------------------------
+# SIDEBAR
+# -----------------------------
+st.sidebar.title('📂 Data Upload')
 
-min_date, max_date = df["Date"].min(), df["Date"].max()
-date_range = st.sidebar.date_input("Date Range", (min_date, max_date), min_value=min_date, max_value=max_date)
-
-categories = st.sidebar.multiselect("Category", sorted(df["Category"].dropna().unique()), default=list(df["Category"].dropna().unique()))
-brands = st.sidebar.multiselect("Brand", sorted(df["Brand"].dropna().unique()), default=list(df["Brand"].dropna().unique()))
-branches = st.sidebar.multiselect("Branch", sorted(df["Branch"].dropna().unique()), default=list(df["Branch"].dropna().unique()))
-payment_methods = st.sidebar.multiselect("Payment Method", sorted(df["Payment Method"].dropna().unique()), default=list(df["Payment Method"].dropna().unique()))
-
-mask = (
-    (df["Date"] >= pd.to_datetime(date_range[0]))
-    & (df["Date"] <= pd.to_datetime(date_range[1]))
-    & (df["Category"].isin(categories))
-    & (df["Brand"].isin(brands))
-    & (df["Branch"].isin(branches))
-    & (df["Payment Method"].isin(payment_methods))
+uploaded_file = st.sidebar.file_uploader(
+    'Upload Excel File',
+    type=['xlsx']
 )
-fdf = df[mask]
 
-# ---------------------------------------------------------------
-# 3. KPI CARDS
-# ---------------------------------------------------------------
-st.title("💻 Computer Shop Sales — End-to-End Dashboard")
+df = load_data(uploaded_file)
 
-total_revenue = fdf["Total Price"].sum()
-total_units = fdf["Quantity"].sum()
-invoice_count = fdf["Invoice ID"].nunique()
-avg_sale = total_revenue / invoice_count if invoice_count else 0
+if df is None:
+    st.warning('Please upload computer shop.xlsx file')
+    st.stop()
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total Revenue", f"${total_revenue:,.0f}")
-c2.metric("Units Sold", f"{total_units:,}")
-c3.metric("Invoices", f"{invoice_count:,}")
-c4.metric("Avg Sale Value", f"${avg_sale:,.2f}")
+# -----------------------------
+# FILTERS
+# -----------------------------
+st.sidebar.title('🔎 Filters')
+
+region_filter = st.sidebar.multiselect(
+    'Select Region',
+    options=df['Region'].unique(),
+    default=df['Region'].unique()
+)
+
+category_filter = st.sidebar.multiselect(
+    'Select Category',
+    options=df['Category'].unique(),
+    default=df['Category'].unique()
+)
+
+filtered_df = df[
+    (df['Region'].isin(region_filter)) &
+    (df['Category'].isin(category_filter))
+]
+
+# -----------------------------
+# KPI CARDS
+# -----------------------------
+st.title('💻 Computer Shop Sales Dashboard')
+
+total_sales = filtered_df['Total_Sales'].sum()
+total_profit = filtered_df['Profit'].sum()
+total_orders = filtered_df['Order_ID'].nunique()
+total_customers = filtered_df['Customer'].nunique()
+
+col1, col2, col3, col4 = st.columns(4)
+
+col1.metric('Total Sales', f'${total_sales:,.0f}')
+col2.metric('Total Profit', f'${total_profit:,.0f}')
+col3.metric('Total Orders', f'{total_orders:,}')
+col4.metric('Total Customers', f'{total_customers:,}')
 
 st.divider()
 
-# ---------------------------------------------------------------
-# 4. TREND CHART
-# ---------------------------------------------------------------
-trend = fdf.groupby("Month")["Total Price"].sum().reset_index()
-fig_trend = px.line(trend, x="Month", y="Total Price", markers=True, title="Monthly Revenue Trend")
-st.plotly_chart(fig_trend, use_container_width=True)
+# -----------------------------
+# MONTHLY SALES TREND
+# -----------------------------
+monthly_sales = filtered_df.groupby('Month')['Total_Sales'].sum().reset_index()
 
-# ---------------------------------------------------------------
-# 5. CATEGORY / BRAND BREAKDOWN
-# ---------------------------------------------------------------
-col1, col2 = st.columns(2)
+fig1 = px.line(
+    monthly_sales,
+    x='Month',
+    y='Total_Sales',
+    markers=True,
+    title='📈 Monthly Sales Trend'
+)
 
-with col1:
-    cat = fdf.groupby("Category")["Total Price"].sum().reset_index()
-    fig_cat = px.bar(cat, x="Category", y="Total Price", title="Revenue by Category")
-    st.plotly_chart(fig_cat, use_container_width=True)
+st.plotly_chart(fig1, use_container_width=True)
 
-with col2:
-    brand = fdf.groupby("Brand")["Total Price"].sum().reset_index()
-    fig_brand = px.pie(brand, names="Brand", values="Total Price", title="Revenue Share by Brand", hole=0.4)
-    st.plotly_chart(fig_brand, use_container_width=True)
+# -----------------------------
+# CATEGORY ANALYSIS
+# -----------------------------
+col5, col6 = st.columns(2)
 
-# ---------------------------------------------------------------
-# 6. PAYMENT METHOD & BRANCH PERFORMANCE
-# ---------------------------------------------------------------
-col3, col4 = st.columns(2)
+with col5:
+    category_sales = filtered_df.groupby('Category')['Total_Sales'].sum().reset_index()
 
-with col3:
-    pay = fdf.groupby("Payment Method")["Total Price"].sum().reset_index()
-    fig_pay = px.bar(pay, x="Payment Method", y="Total Price", title="Revenue by Payment Method")
-    st.plotly_chart(fig_pay, use_container_width=True)
+    fig2 = px.bar(
+        category_sales,
+        x='Category',
+        y='Total_Sales',
+        title='📦 Sales by Category',
+        text_auto=True
+    )
 
-with col4:
-    branch = fdf.groupby("Branch")["Total Price"].sum().sort_values(ascending=False).reset_index()
-    fig_branch = px.bar(branch, x="Branch", y="Total Price", title="Revenue by Branch")
-    st.plotly_chart(fig_branch, use_container_width=True)
+    st.plotly_chart(fig2, use_container_width=True)
 
-# ---------------------------------------------------------------
-# 7. TOP SALESPEOPLE TABLE + DRILL-DOWN
-# ---------------------------------------------------------------
-st.subheader("Top 10 Salespeople")
-top_sales = (fdf.groupby("Salesperson")["Total Price"].sum()
-               .sort_values(ascending=False).head(10).reset_index()
-               .rename(columns={"Total Price": "Revenue"}))
-st.dataframe(top_sales, use_container_width=True)
+with col6:
+    region_sales = filtered_df.groupby('Region')['Total_Sales'].sum().reset_index()
 
-with st.expander("🔍 View filtered raw data"):
-    st.dataframe(fdf, use_container_width=True)
-    st.download_button("Download filtered data (CSV)", fdf.to_csv(index=False), "filtered_sales.csv")
+    fig3 = px.pie(
+        region_sales,
+        names='Region',
+        values='Total_Sales',
+        title='🌍 Sales by Region',
+        hole=0.4
+    )
 
-st.caption("Built with Streamlit · pandas · Plotly — data updates automatically as filters change.")
+    st.plotly_chart(fig3, use_container_width=True)
+
+# -----------------------------
+# TOP PRODUCTS
+# -----------------------------
+st.subheader('🏆 Top 10 Products')
+
+top_products = (
+    filtered_df.groupby('Product_Name')['Total_Sales']
+    .sum()
+    .sort_values(ascending=False)
+    .head(10)
+    .reset_index()
+)
+
+fig4 = px.bar(
+    top_products,
+    x='Total_Sales',
+    y='Product_Name',
+    orientation='h',
+    title='Top Products by Revenue',
+    text_auto=True
+)
+
+st.plotly_chart(fig4, use_container_width=True)
+
+# -----------------------------
+# TOP CUSTOMERS
+# -----------------------------
+st.subheader('👥 Top 10 Customers')
+
+top_customers = (
+    filtered_df.groupby('Customer')['Total_Sales']
+    .sum()
+    .sort_values(ascending=False)
+    .head(10)
+    .reset_index()
+)
+
+st.dataframe(top_customers, use_container_width=True)
+
+# -----------------------------
+# RAW DATA
+# -----------------------------
+with st.expander('📋 View Raw Data'):
+    st.dataframe(filtered_df, use_container_width=True)
+
+    csv = filtered_df.to_csv(index=False)
+
+    st.download_button(
+        label='⬇ Download Filtered Data',
+        data=csv,
+        file_name='filtered_sales.csv',
+        mime='text/csv'
+    )
+
+st.caption('Built with Streamlit • Pandas • Plotly')
